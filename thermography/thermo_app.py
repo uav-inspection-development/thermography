@@ -8,6 +8,7 @@ from . import ModuleMap
 from .classification import Inference
 from .classification.models import ThermoNet3x3
 from .detection import *
+from .calculation import *
 from .io import VideoLoader
 from .settings import Camera, get_resources_dir
 from .utils import aspect_ratio
@@ -64,6 +65,7 @@ class ThermoApp:
         self.last_segments = None
         self.last_cluster_list = None
         self.last_rectangles = None
+        self.last_rectangle_offsets = None
         self.last_mean_motion = None
         self.last_frame_id = 0
         self.last_probabilities = {}
@@ -77,6 +79,7 @@ class ThermoApp:
         self.cluster_cleaning_parameters = ClusterCleaningParams()
         self.intersection_detection_parameters = IntersectionDetectorParams()
         self.rectangle_detection_parameters = RectangleDetectorParams()
+        self.distance_calculation_parameters = DistanceCalculatorParams()
 
         # Load the camera and module parameters.
         self.__load_params()
@@ -150,6 +153,8 @@ class ThermoApp:
         self.cluster_segments()
         self.detect_intersections()
         self.detect_rectangles()
+        # TODO:
+        self.calculate_distance()
 
         # Motion estimate.
         self.last_mean_motion = self.motion_detector.motion_estimate(self.last_scaled_frame)
@@ -176,6 +181,7 @@ class ThermoApp:
         self.last_segments = None
         self.last_cluster_list = None
         self.last_rectangles = None
+        self.last_rectangle_offsets = None
         self.last_mean_motion = None
 
         self.last_probabilities = {}
@@ -248,6 +254,23 @@ class ThermoApp:
                                                params=self.rectangle_detection_parameters)
         rectangle_detector.detect()
         self.last_rectangles = rectangle_detector.rectangles
+
+    def calculate_distance(self) -> None:
+        """
+        Calculates the distance between the center of the image and the center of each detected rectangle,
+        expressed as a multiple of the basic rectangle length.
+
+        This function uses the DistanceCalculator class to perform the calculations.
+        """
+        if not self.last_rectangles or self.last_scaled_frame is None:
+            Logger.warning("No rectangles or image data available to calculate distances.")
+            return
+
+        distance_calculator = DistanceCalculator(input_rectangles=self.last_rectangles,
+                                                 input_image_shape=self.last_scaled_frame.shape[:2],
+                                                 params=self.rectangle_detection_parameters)
+        distance_calculator.calculate_offsets()
+        self.last_rectangle_offsets = distance_calculator.offsets
 
     def classify_detected_modules(self) -> None:
         """Classifies the modules in the global module map which have been detected in the current frame.

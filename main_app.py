@@ -13,6 +13,7 @@ def _main():
 
     app = tg.App(input_video_path=IN_FILE_NAME, camera_param_file=camera_param_file)
 
+    # TODO:
     app.load_video(start_frame=1700, end_frame=1900)
     app.run()
 
