@@ -1,8 +1,9 @@
 import os
-
+import exifread
 import cv2
 import progressbar
 from simple_logger import Logger
+from typing import Optional
 
 from . import Modality
 
@@ -22,6 +23,7 @@ class ImageLoader:
         self.image_path = image_path
         self.mode = mode
         self.image_raw = cv2.imread(self.image_path, self.mode)
+        self.rtk_data = self._extract_rtk_data()
 
     def show_raw(self, title: str = "", wait: int = 0) -> None:
         """Displays the raw image associated with the calling instance.
@@ -36,6 +38,51 @@ class ImageLoader:
     def image_path(self) -> str:
         """Returns the absolute path to the image loaded by this object."""
         return self.__image_path
+
+    def _extract_rtk_data(self) -> Optional[dict]:
+        """Extracts RTK precise position (latitude, longitude, altitude) from the image metadata if available.
+
+        :return: A dictionary with latitude, longitude, and altitude, or None if RTK data is not available.
+        """
+        try:
+            with open(self.image_path, 'rb') as image_file:
+                tags = exifread.process_file(image_file)
+
+                # Extract GPS data
+                latitude = tags.get('GPS GPSLatitude')
+                latitude_ref = tags.get('GPS GPSLatitudeRef')
+                longitude = tags.get('GPS GPSLongitude')
+                longitude_ref = tags.get('GPS GPSLongitudeRef')
+                altitude = tags.get('GPS GPSAltitude')
+
+                if latitude and longitude and altitude:
+                    # Convert latitude and longitude to decimal degrees
+                    lat = self._convert_to_decimal(latitude, str(latitude_ref))
+                    lon = self._convert_to_decimal(longitude, str(longitude_ref))
+                    alt = float(altitude.values[0])  # Altitude in meters
+
+                    Logger.info(f"RTK data extracted: Latitude={lat}, Longitude={lon}, Altitude={alt}")
+                    return [lat, lon, alt]
+                else:
+                    Logger.warning("RTK data not found in image metadata.")
+                    return [None, None, None]
+        except Exception as e:
+            Logger.error(f"Error extracting RTK data: {e}")
+            return [None, None, None]
+
+    @staticmethod
+    def _convert_to_decimal(value, ref) -> float:
+        """Converts GPS coordinates from DMS to decimal degrees.
+
+        :param value: GPS coordinate in DMS format.
+        :param ref: Reference ('N', 'S', 'E', 'W').
+        :return: Decimal degree representation of the coordinate.
+        """
+        d, m, s = [float(x.num) / float(x.den) for x in value.values]
+        decimal = d + (m / 60.0) + (s / 3600.0)
+        if ref in ['S', 'W']:
+            decimal = -decimal
+        return decimal
 
     @image_path.setter
     def image_path(self, path: str):

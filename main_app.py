@@ -1,20 +1,34 @@
 import os
-
+import argparse
 import thermography as tg
 from thermography.io import setup_logger, LogLevel
 
 
 def _main():
-    SETTINGS_DIR = tg.settings.get_settings_dir()
-    camera_param_file = os.path.join(SETTINGS_DIR, "camera_parameters.json")
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Thermography Application")
+    parser.add_argument("--camera_param_file", required=True, help="Path to the camera parameters JSON file")
+    parser.add_argument("--input_video", required=True, help="Path to the input video file")
+    parser.add_argument("--start_frame", type=int, default=0, help="Start frame (inclusive, default: 0)")
+    parser.add_argument("--end_frame", type=int, default=None, help="End frame (exclusive, default: None)")
+    args = parser.parse_args()
 
-    tg.settings.set_data_dir("Z:/SE/SEI/Servizi Civili/Del Don Carlo/termografia/")
-    IN_FILE_NAME = os.path.join(tg.settings.get_data_dir(), "Ispez Termografica Ghidoni 1.mov")
+    # Check for conflicting inputs
+    if args.input_video and args.input_image:
+        print("Error: Both --input_video and --input_image are provided. Please specify only one.")
+        exit(1)
+    elif not args.input_video and not args.input_image:
+        print("Error: Neither --input_video nor --input_image is provided. Please specify one.")
+        exit(1)
 
-    app = tg.App(input_video_path=IN_FILE_NAME, camera_param_file=camera_param_file)
+    app = tg.App(input_path=args.input_video or args.input_image, camera_param_file=args.camera_param_file)
 
-    # TODO:
-    app.load_video(start_frame=1700, end_frame=1900)
+    # Load video or image based on the input
+    if args.input_video:
+        app.load_video(start_frame=args.start_frame, end_frame=args.end_frame)
+    elif args.input_image:
+        app.load_image()
+
     app.run()
 
 

@@ -9,7 +9,7 @@ from .classification import Inference
 from .classification.models import ThermoNet3x3
 from .detection import *
 from .calculation import *
-from .io import VideoLoader
+from .io import VideoLoader, ImageLoader
 from .settings import Camera, get_resources_dir
 from .utils import aspect_ratio
 from .utils.display import *
@@ -26,14 +26,14 @@ class ThermoApp:
         app.run()
     """
 
-    def __init__(self, input_video_path, camera_param_file):
+    def __init__(self, input_path, camera_param_file):
         """Initializes the :class:`ThermoApp` instance by defining default parameters.
 
-        :param input_video_path: Absolute path to the input video.
+        :param input_path: Absolute path to the input video.
         :param camera_param_file: Parameter file of the camera.
         """
         Logger.debug("Starting thermo app")
-        self.input_video_path = input_video_path
+        self.input_path = input_path
         self.camera_param_file = camera_param_file
 
         # Camera object containing the corresponding parameters.
@@ -41,6 +41,9 @@ class ThermoApp:
 
         # Object responsible for loading the video passed as parameter.
         self.video_loader = None
+
+        # Object responsible for loading the image passed as parameter.
+        self.image_loader = None
 
         # Global module map with associated motion detector.
         self.module_map = ModuleMap()
@@ -65,7 +68,8 @@ class ThermoApp:
         self.last_segments = None
         self.last_cluster_list = None
         self.last_rectangles = None
-        self.last_rectangle_offsets = None
+        self.last_average_dimensions = None
+        self.last_rectangle_distances = None
         self.last_mean_motion = None
         self.last_frame_id = 0
         self.last_probabilities = {}
@@ -85,44 +89,51 @@ class ThermoApp:
         self.__load_params()
 
     def run(self) -> None:
-        """Runs the :class:`ThermoApp` by iterating over all frames and detecting the modules. This function does not perform module classification."""
-        for frame_id, frame in enumerate(self.video_loader.frames):
-
-            # Perform a step, if it was successful, display the detection.
+        """Runs the :class:`ThermoApp` by iterating over all frames (for video) or processing a single image.
+        This function does not perform module classification."""
+        if self.video_loader:  # If a video loader is present, process video frames
+            for frame_id, frame in enumerate(self.video_loader.frames):
+                # Perform a step, if it was successful, display the detection.
+                if self.step(frame_id, frame):
+                    self.display_results(frame_id)
+                self.reset()
+        elif self.image_loader:  # If an image loader is present, process a single image
+            frame = self.image_loader.image
+            frame_id = 0  # Use a default frame ID for the single image
             if self.step(frame_id, frame):
+                self.display_results(frame_id)
 
-                base_image = self.last_scaled_frame_rgb
+    def display_results(self, frame_id: int) -> None:
+        """Displays the results of the detection process."""
+        base_image = self.last_scaled_frame_rgb
 
-                draw_segments(segments=self.last_cluster_list, base_image=base_image.copy(),
-                              windows_name="Filtered segments")
-                draw_intersections(intersections=self.last_raw_intersections,
-                                   base_image=base_image.copy(), windows_name="Intersections")
-                draw_rectangles(rectangles=self.last_rectangles, base_image=base_image.copy(),
-                                windows_name="Detected rectangles")
-                draw_motion(flow=self.motion_detector.flow, base_image=self.motion_detector.last_frame,
-                            windows_name="Motion estimate")
-                cv2.imshow("Canny edges", self.last_edges_frame)
+        draw_segments(segments=self.last_cluster_list, base_image=base_image.copy(),
+                    windows_name="Filtered segments")
+        draw_intersections(intersections=self.last_raw_intersections,
+                        base_image=base_image.copy(), windows_name="Intersections")
+        draw_rectangles(rectangles=self.last_rectangles, base_image=base_image.copy(),
+                        windows_name="Detected rectangles")
+        draw_motion(flow=self.motion_detector.flow, base_image=self.motion_detector.last_frame,
+                    windows_name="Motion estimate")
+        cv2.imshow("Canny edges", self.last_edges_frame)
 
-                global_map = base_image.copy()
-                for rect_id, rectangle in self.module_map.global_module_map.items():
-                    rect_shift = rectangle.last_rectangle - np.int32(rectangle.cumulated_motion)
-                    if rectangle.frame_id_history[-1] == frame_id:
-                        color = (0, 0, 255)
-                        thickness = 2
-                    else:
-                        color = (255, 0, 0)
-                        thickness = 1
-                    cv2.polylines(global_map, np.int32([rect_shift]), True, color, thickness, cv2.LINE_AA)
-                    center = np.mean(rect_shift, axis=0)
-                    if thickness > 1:
-                        cv2.putText(global_map, str(rect_id), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_PLAIN,
-                                    1,
-                                    (255, 255, 255), 1)
+        global_map = base_image.copy()
+        for rect_id, rectangle in self.module_map.global_module_map.items():
+            rect_shift = rectangle.last_rectangle - np.int32(rectangle.cumulated_motion)
+            if rectangle.frame_id_history[-1] == frame_id:
+                color = (0, 0, 255)
+                thickness = 2
+            else:
+                color = (255, 0, 0)
+                thickness = 1
+            cv2.polylines(global_map, np.int32([rect_shift]), True, color, thickness, cv2.LINE_AA)
+            center = np.mean(rect_shift, axis=0)
+            if thickness > 1:
+                cv2.putText(global_map, str(rect_id), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_PLAIN,
+                            1, (255, 255, 255), 1)
 
-                cv2.imshow("Global map", global_map)
-
-                cv2.waitKey(1)
-            self.reset()
+        cv2.imshow("Global map", global_map)
+        cv2.waitKey(1)
 
     def step(self, frame_id, frame) -> bool:
         """Perform a single step of the module detection using the frame passed as argument.
@@ -181,7 +192,8 @@ class ThermoApp:
         self.last_segments = None
         self.last_cluster_list = None
         self.last_rectangles = None
-        self.last_rectangle_offsets = None
+        self.last_average_dimensions = None
+        self.last_rectangle_distances = None
         self.last_mean_motion = None
 
         self.last_probabilities = {}
@@ -254,6 +266,7 @@ class ThermoApp:
                                                params=self.rectangle_detection_parameters)
         rectangle_detector.detect()
         self.last_rectangles = rectangle_detector.rectangles
+        self.last_average_dimensions = rectangle_detector.get_average_dimensions()
 
     def calculate_distance(self) -> None:
         """
@@ -266,11 +279,13 @@ class ThermoApp:
             Logger.warning("No rectangles or image data available to calculate distances.")
             return
 
+        # TODO: Add the precise location as input
         distance_calculator = DistanceCalculator(input_rectangles=self.last_rectangles,
                                                  input_image_shape=self.last_scaled_frame.shape[:2],
+                                                 input_image_rtk=self.image_loader.rtk_data,
                                                  params=self.rectangle_detection_parameters)
-        distance_calculator.calculate_offsets()
-        self.last_rectangle_offsets = distance_calculator.offsets
+        distance_calculator.calculate_distances()
+        self.last_rectangle_positions = distance_calculator.rectangle_positions
 
     def classify_detected_modules(self) -> None:
         """Classifies the modules in the global module map which have been detected in the current frame.
@@ -313,7 +328,15 @@ class ThermoApp:
         See Also:
         Module :mod:`~thermography.io.io` for more details.
         """
-        self.video_loader = VideoLoader(video_path=self.input_video_path, start_frame=start_frame, end_frame=end_frame)
+        self.video_loader = VideoLoader(video_path=self.input_path, start_frame=start_frame, end_frame=end_frame)
+
+    def load_image(self) -> None:
+        """Loads the image associated with the absolute path given to the constructor.
+
+        See Also:
+        Module :mod:`~thermography.io.io` for more details.
+        """
+        self.image_loader = ImageLoader(image_path=self.input_path)
 
     def create_segment_image(self):
         Logger.debug("Creating segment image")

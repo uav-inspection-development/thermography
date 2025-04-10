@@ -62,6 +62,51 @@ class RectangleDetector:
             return True
         return False
 
+    def calculate_rectangle_dimensions(rectangle: np.ndarray) -> tuple:
+        """
+        Calculates the row length and column length of a rectangle.
+
+        :param rectangle: A numpy array of shape `[4, 2]` representing the four corners of the rectangle.
+                        The corners should be ordered as [top-left, top-right, bottom-right, bottom-left].
+        :return: A tuple `(row_length, col_length)` where:
+                - `row_length` is the horizontal distance (width) of the rectangle.
+                - `col_length` is the vertical distance (height) of the rectangle.
+        """
+        # Calculate the row length (distance between top-left and top-right)
+        row_length = np.linalg.norm(rectangle[0] - rectangle[1])
+
+        # Calculate the column length (distance between top-left and bottom-left)
+        col_length = np.linalg.norm(rectangle[0] - rectangle[3])
+
+        return row_length, col_length
+
+    def get_average_dimensions(self) -> tuple:
+        """
+        Calculates and returns the average row length and column length of the detected rectangles.
+
+        :return: A tuple `(avg_row_length, avg_col_length)` where:
+                - `avg_row_length` is the average horizontal distance (width) of the rectangles.
+                - `avg_col_length` is the average vertical distance (height) of the rectangles.
+                If no rectangles are detected, returns `(0.0, 0.0)`.
+        """
+        if not self.rectangles:
+            Logger.warning("No rectangles detected to calculate average dimensions.")
+            return 0.0, 0.0
+
+        total_row_length = 0.0
+        total_col_length = 0.0
+
+        for rectangle in self.rectangles:
+            row_length, col_length = self.calculate_rectangle_dimensions(rectangle)
+            total_row_length += row_length
+            total_col_length += col_length
+
+        avg_row_length = total_row_length / len(self.rectangles)
+        avg_col_length = total_col_length / len(self.rectangles)
+
+        Logger.info(f"Average row length: {avg_row_length:.2f}, Average col length: {avg_col_length:.2f}")
+        return avg_row_length, avg_col_length
+
     def __detect_rectangles_between_clusters(self, cluster_index_i: int, cluster_index_j: int):
         intersections_i_j = self.intersections[cluster_index_i, cluster_index_j]
         rectangles_between_cluster_i_j = []
