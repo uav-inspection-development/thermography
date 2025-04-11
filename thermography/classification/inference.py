@@ -3,7 +3,8 @@ import os
 import cv2
 import numpy as np
 import tensorflow as tf
-from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 
 from .models.base_net import BaseNet
 

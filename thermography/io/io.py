@@ -1,8 +1,10 @@
 import os
 
 import cv2
+
 import progressbar
-from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 
 from . import Modality
 

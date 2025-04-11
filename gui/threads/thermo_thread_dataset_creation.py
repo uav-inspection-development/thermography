@@ -3,7 +3,8 @@ import os
 import numpy as np
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread
-from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 
 import thermography as tg
 

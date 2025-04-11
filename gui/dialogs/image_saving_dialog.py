@@ -2,7 +2,8 @@ import os
 
 import cv2
 from PyQt5 import QtWidgets, QtGui
-from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 
 import thermography as tg
 from gui.design import Ui_Save_images_dialog

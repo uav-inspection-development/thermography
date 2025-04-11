@@ -1,9 +1,14 @@
 import numpy as np
-from simple_logger import Logger
-
+##from simple_logger import Logger
+import simplelogging
+import os
+import sys
 from thermography.utils import ID, rectangle_contains, area_between_rectangles, area
 
+Logger = simplelogging.get_logger()
 
+project_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(project_root, "..", "libs", "progressbar-python3"))
 class ModuleMap:
     """Class responsible for storing a spatial representation of the detected modules.
     Each module is keyed by an unique ID Multiple detections of the same module are considered and the existing module is updated in the internal representation of the map.

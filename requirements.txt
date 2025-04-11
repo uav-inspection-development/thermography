@@ -9,6 +9,7 @@ pyqt5
 
 sphinx>=1.6
 sphinx_rtd_theme
+simplelogging>0.12.0
 
 git+git://github.com/coagulant/progressbar-python3.git
-git+git://github.com/cdeldon/simple-logger.git@master
+# git+git://github.com/cdeldon/simple-logger.git@master

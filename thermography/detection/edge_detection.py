@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
-from simple_logger import Logger
+##from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 
 __all__ = ["EdgeDetectorParams", "EdgeDetector"]
 

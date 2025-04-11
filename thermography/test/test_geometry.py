@@ -9,6 +9,23 @@ from thermography.utils.geometry import *
 
 
 class TestGeometryUtils(unittest.TestCase):
+    # def assertListAlmostEqual(self, first, second, places=None, msg=None):
+    #     """Tests whether the elements of two lists are almost equal.
+    #
+    #     :param first: The first list to compare.
+    #     :param second: The second list to compare.
+    #     :param places: Decimal places to be checked for comparison.
+    #     :param msg: Optional error message in case comparison failure.
+    #     :return: True if the two lists passed as argument are almost equal, False otherwise.
+    #     """
+    #     self.assertEqual(len(first), len(second),
+    #                      msg="Compared lists are not of the same size. Give sizes: first = {}, second = {}".format(
+    #                          len(first), len(second)))
+    #     for f, s in zip(first, second):
+    #         if isinstance(f, collections.Iterable):
+    #             self.assertListAlmostEqual(f, s, places, msg)
+    #         else:
+    #             self.assertAlmostEqual(f, s, places=places, msg=msg)
     def assertListAlmostEqual(self, first, second, places=None, msg=None):
         """Tests whether the elements of two lists are almost equal.
 
@@ -19,10 +36,10 @@ class TestGeometryUtils(unittest.TestCase):
         :return: True if the two lists passed as argument are almost equal, False otherwise.
         """
         self.assertEqual(len(first), len(second),
-                         msg="Compared lists are not of the same size. Give sizes: first = {}, second = {}".format(
+                         msg="Compared lists are not of the same size. Given sizes: first = {}, second = {}".format(
                              len(first), len(second)))
         for f, s in zip(first, second):
-            if isinstance(f, collections.Iterable):
+            if isinstance(f, collections.abc.Iterable):
                 self.assertListAlmostEqual(f, s, places, msg)
             else:
                 self.assertAlmostEqual(f, s, places=places, msg=msg)

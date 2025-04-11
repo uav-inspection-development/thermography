@@ -1,5 +1,6 @@
 import numpy as np
-from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import normalize

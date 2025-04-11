@@ -6,7 +6,8 @@ import cv2
 import numpy as np
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtGui import QImage, QPainter
-from simple_logger import Logger
+import simplelogging
+Logger = simplelogging.get_logger()
 
 import thermography as tg
 from gui.design import Ui_CreateDataset_main_window
