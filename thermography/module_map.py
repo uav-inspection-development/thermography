@@ -42,18 +42,20 @@ class ModuleMap:
         samples associated to the module.
         """
 
-        def __init__(self, ID: int, rectangle: np.ndarray, frame_id: int):
+        def __init__(self, ID: int, rectangle: np.ndarray, frame_id: int, position: list = None) -> None:
             """Initializes the module with the ID, image-coordinates and frame id passed as argument.
 
             :param ID: Unique integer identifier. This module is keyed by this parameter in the ModuleMap.
             :param rectangle: Numpy array of pixel-coordinates associated to the first module detection of the form np.array([[x0, y0], [x1, y1], [x2, y2], [x3, y3]])
             :param frame_id: Integer associated to the video-frame the module has been detected from.
+            :param position: List representing the position (e.g., [latitude, longitude, altitude]) of the module.
             """
             Logger.debug("Creating a new module inside the map with ID {}".format(ID))
             self.ID = ID
             self.last_rectangle = None
             self.last_center = None
             self.last_area = None
+            self.last_position = None
 
             # Initialize the frame history and rectangle history to be empty. They will be filled in the self.add(...) method.
             self.frame_id_history = []
@@ -63,7 +65,7 @@ class ModuleMap:
             self.cumulated_motion = np.array([0, 0], dtype=np.float32)
             self.__all_probabilities = []
 
-            self.add(rectangle, frame_id)
+            self.add(rectangle, frame_id, position)
 
         def __repr__(self):
             s = ""
@@ -79,11 +81,12 @@ class ModuleMap:
 
             return s
 
-        def add(self, rectangle: np.ndarray, frame_id: int) -> None:
+        def add(self, rectangle: np.ndarray, frame_id: int, position: list = None) -> None:
             """Adds a the observation of the module to the current state.
 
             :param rectangle: New image-coordinates of the module being observed.
             :param frame_id: Frame id of the frame in which the module has been detected.
+            :param position: List representing the position (e.g., [latitude, longitude, altitude]) of the module.
             """
             self.last_rectangle = rectangle
             self.last_center = np.mean(self.last_rectangle, axis=0)
@@ -91,6 +94,10 @@ class ModuleMap:
 
             self.frame_id_history.append(frame_id)
             self.rectangle_history[frame_id] = rectangle
+
+            # Update the position if provided
+            if position is not None:
+                self.last_position = position
 
             # Since the module has been detected now, the motion estimate is reset to zero.
             self.cumulated_motion = np.array([0, 0], dtype=np.float32)
@@ -137,12 +144,13 @@ class ModuleMap:
             s += str(module_in_map) + "\n\n"
         return s
 
-    def insert(self, rectangle_list: list, frame_id: int, motion_estimate: np.ndarray = None):
+    def insert(self, rectangle_list: list, frame_id: int, motion_estimate: np.ndarray = None, positions: list = None):
         """Inserts all rectangles contained in the list  passed as first parameter into the global map representation.
 
         :param rectangle_list: List of detected rectangles to be inserted into the global module map.
         :param frame_id: Frame id of the current image frame associated to the detected rectangles.
         :param motion_estimate: Numpy array representing the motion estimate between the last frame (ID-1) and the frame containing the rectangles.
+        :param positions: List of positions (e.g., latitude, longitude, altitude) corresponding to each rectangle.
         """
 
         Logger.debug("Inserting a new rectangle list into the module map at frame {}".format(frame_id))
@@ -150,13 +158,19 @@ class ModuleMap:
         if motion_estimate is None:
             motion_estimate = np.array([0.0, 0.0])
 
+        # Ensure positions list matches the rectangle list length
+        if positions is None:
+            positions = [None] * len(rectangle_list)
+        elif len(positions) != len(rectangle_list):
+            raise ValueError("The length of positions must match the length of rectangle_list.")
+
         # In case there are no rectangles in the global map (first step in the simulation) store all the ones passed to
         # the function as if they were new modules.
         if len(self.global_module_map) == 0:
-            for rectangle in rectangle_list:
+            for rectangle, position in zip(rectangle_list, positions):
                 # Give a new ID to each rectangle.
                 next_ID = ID.next_id()
-                self.global_module_map[next_ID] = self.__ModuleInMap(next_ID, rectangle, frame_id)
+                self.global_module_map[next_ID] = self.__ModuleInMap(next_ID, rectangle, frame_id, position)
         else:
             # Correspondences between the rectangles passed to the function and the ones already stored in the global map.
             # If no correspondence is found (e.g. a rectangle is new), then set the correspondence to None.
@@ -184,11 +198,10 @@ class ModuleMap:
                 # If there was no correspondence, add the rectangle as a new module in the global map.
                 if correspondence is None:
                     next_ID = ID.next_id()
-                    self.global_module_map[next_ID] = self.__ModuleInMap(next_ID, rectangle_list[rectangle_index],
-                                                                         frame_id)
+                    self.global_module_map[next_ID] = self.__ModuleInMap(next_ID, rectangle_list[rectangle_index], frame_id, position)
                 else:
                     # Update the correspondet module in the map with the newest coordinates.
-                    self.global_module_map[correspondence].add(rectangle_list[rectangle_index], frame_id)
+                    self.global_module_map[correspondence].add(rectangle_list[rectangle_index], frame_id, position)
 
             # Update the rectangles in the global map with the motion estimate.
             for _, rectangle_in_map in self.global_module_map.items():

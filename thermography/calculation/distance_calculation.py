@@ -62,7 +62,7 @@ class DistanceCalculator:
 
             # Calculate the real-world distance per pixel using the rectangle's real-world length
             # and its pixel length (distance between two opposite vertices)
-            rectangle_pixel_length = np.linalg.norm(rectangle_vertices[0] - rectangle_vertices[1])
+            rectangle_pixel_length = (np.linalg.norm(rectangle_vertices[0] - rectangle_vertices[1]) + np.linalg.norm(rectangle_vertices[2] - rectangle_vertices[3])) / 2
             meters_per_pixel = self.params.rectangle_length / rectangle_pixel_length
 
             # Convert pixel offset to real-world distances (in meters)

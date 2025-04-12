@@ -13,25 +13,50 @@ __all__ = ["ImageLoader", "VideoLoader"]
 class ImageLoader:
     """Class responsible for loading a single image file into a numpy array."""
 
-    def __init__(self, image_path: str, mode: Modality = Modality.DEFAULT):
+    def __init__(self, image_folder_path: str, mode: Modality = Modality.DEFAULT):
         """Initializes and loads the image associated to the file indicated by the path passed as argument.
 
-        :param image_path: Absolute path to the image file to be loaded.
+        :param image_folder_path: Absolute path to the folder containing the images to be loaded.
         :param mode: Modality to be used when loading the image.
         """
-        Logger.debug("Loading image at {}".format(image_path))
-        self.image_path = image_path
+        Logger.debug("Loading images from folder: {}".format(image_folder_path))
+        self.image_folder_path = image_folder_path
         self.mode = mode
-        self.image_raw = cv2.imread(self.image_path, self.mode)
-        self.rtk_data = self._extract_rtk_data()
+        self.frames = []  # List to store loaded images
+        self.image_paths = []  # List to store paths of the loaded images
+        self.rtk_data_list = []  # List to store RTK data for each image
+        self.__load_images()
 
-    def show_raw(self, title: str = "", wait: int = 0) -> None:
-        """Displays the raw image associated with the calling instance.
+    @property
+    def num_frames(self) -> int:
+        """Returns the number of images loaded by this object."""
+        return len(self.frames)
 
-        :param title: Title to be added to the displayed image.
-        :param wait: Time to wait until displayed windows is closed. If set to 0, then the image does not close.
+    @property
+    def image_folder_path(self) -> str:
+        """Returns the absolute path to the folder containing the images."""
+        return self.__image_folder_path
+
+    @image_folder_path.setter
+    def image_folder_path(self, folder: str):
+        if not os.path.isdir(folder):
+            Logger.fatal("Image folder {} does not exist".format(folder))
+            raise FileNotFoundError("Image folder {} not found".format(folder))
+        self.__image_folder_path = folder
+
+    def show_image(self, index: int, title: str = "", wait: int = 0) -> None:
         """
-        cv2.imshow(title + " (raw)" if len(title) > 0 else "", self.image_raw)
+        Displays the image at the specified index.
+
+        :param index: Index of the image to display.
+        :param title: Title to be added to the displayed image.
+        :param wait: Time to wait until the displayed window is closed. If set to 0, the image does not close.
+        """
+        if index < 0 or index >= len(self.frames):
+            Logger.error("Index out of range: {}".format(index))
+            raise IndexError("Index out of range: {}".format(index))
+
+        cv2.imshow(title + " (image)" if len(title) > 0 else "", self.frames[index])
         cv2.waitKey(wait)
 
     @property
@@ -39,13 +64,20 @@ class ImageLoader:
         """Returns the absolute path to the image loaded by this object."""
         return self.__image_path
 
-    def _extract_rtk_data(self) -> Optional[dict]:
+    @image_path.setter
+    def image_path(self, path: str):
+        if not os.path.exists(path):
+            raise FileExistsError("Image file {} not found".format(self.image_path))
+        self.__image_path = path
+
+    def _extract_rtk_data(self, image_path: str) -> Optional[list]:
         """Extracts RTK precise position (latitude, longitude, altitude) from the image metadata if available.
 
-        :return: A dictionary with latitude, longitude, and altitude, or None if RTK data is not available.
+        :param image_path: Path to the image file.
+        :return: A list with latitude, longitude, and altitude, or [None, None, None] if RTK data is not available.
         """
         try:
-            with open(self.image_path, 'rb') as image_file:
+            with open(image_path, 'rb') as image_file:
                 tags = exifread.process_file(image_file)
 
                 # Extract GPS data
@@ -61,13 +93,13 @@ class ImageLoader:
                     lon = self._convert_to_decimal(longitude, str(longitude_ref))
                     alt = float(altitude.values[0])  # Altitude in meters
 
-                    Logger.info(f"RTK data extracted: Latitude={lat}, Longitude={lon}, Altitude={alt}")
+                    Logger.info(f"RTK data extracted for {image_path}: Latitude={lat}, Longitude={lon}, Altitude={alt}")
                     return [lat, lon, alt]
                 else:
-                    Logger.warning("RTK data not found in image metadata.")
+                    Logger.warning(f"RTK data not found in image metadata for {image_path}.")
                     return [None, None, None]
         except Exception as e:
-            Logger.error(f"Error extracting RTK data: {e}")
+            Logger.error(f"Error extracting RTK data from {image_path}: {e}")
             return [None, None, None]
 
     @staticmethod
@@ -84,11 +116,38 @@ class ImageLoader:
             decimal = -decimal
         return decimal
 
-    @image_path.setter
-    def image_path(self, path: str):
-        if not os.path.exists(path):
-            raise FileExistsError("Image file {} not found".format(self.image_path))
-        self.__image_path = path
+    def __load_images(self):
+        """Loads all images from the specified folder and extracts RTK data."""
+        # Get all image files in the folder (e.g., .jpg, .png, etc.)
+        valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
+        image_files = sorted(
+            [f for f in os.listdir(self.image_folder_path) if f.lower().endswith(valid_extensions)]
+        )
+
+        if not image_files:
+            Logger.error("No valid image files found in folder: {}".format(self.image_folder_path))
+            raise ValueError("No valid image files found in folder: {}".format(self.image_folder_path))
+
+        Logger.info("Found {} images in folder: {}".format(len(image_files), self.image_folder_path))
+
+        # Load each image and extract RTK data
+        for image_file in image_files:
+            image_path = os.path.join(self.image_folder_path, image_file)
+            image = cv2.imread(image_path, self.mode)
+            if image is None:
+                Logger.warning("Could not load image: {}".format(image_path))
+                continue
+
+            self.frames.append(image)
+            self.image_paths.append(image_path)
+
+            # Extract RTK data for the current image
+            rtk_data = self._extract_rtk_data(image_path)
+            self.rtk_data_list.append(rtk_data)
+
+            Logger.debug(f"Loaded image: {image_path}, RTK data: {rtk_data}")
+
+        Logger.info("Successfully loaded {} images.".format(len(self.frames)))
 
 
 class VideoLoader:

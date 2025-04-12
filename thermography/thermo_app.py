@@ -69,9 +69,10 @@ class ThermoApp:
         self.last_cluster_list = None
         self.last_rectangles = None
         self.last_average_dimensions = None
-        self.last_rectangle_distances = None
+        self.last_rectangle_positions = None
         self.last_mean_motion = None
         self.last_frame_id = 0
+        self.last_rtk_data = None
         self.last_probabilities = {}
 
         # Runtime parameters for detection.
@@ -98,10 +99,11 @@ class ThermoApp:
                     self.display_results(frame_id)
                 self.reset()
         elif self.image_loader:  # If an image loader is present, process a single image
-            frame = self.image_loader.image
-            frame_id = 0  # Use a default frame ID for the single image
-            if self.step(frame_id, frame):
-                self.display_results(frame_id)
+            for frame_id, (frame, rtk_data) in enumerate(zip(self.image_loader.frames, self.image_loader.rtk_data_list)):
+                # Perform a step for each image in the batch
+                if self.step(frame_id, frame, rtk_data):
+                    self.display_results(frame_id)
+                self.reset()
 
     def display_results(self, frame_id: int) -> None:
         """Displays the results of the detection process."""
@@ -132,20 +134,36 @@ class ThermoApp:
                 cv2.putText(global_map, str(rect_id), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_PLAIN,
                             1, (255, 255, 255), 1)
 
+            # Display the rectangle position below the rect_id
+            if rectangle.last_position:
+                position_text = f"{rectangle.last_position[0]:.6f}, {rectangle.last_position[1]:.6f}, {rectangle.last_position[2]:.2f}"
+                cv2.putText(global_map, position_text, (int(center[0]), int(center[1]) + 15), cv2.FONT_HERSHEY_PLAIN,
+                            1, (255, 255, 255), 1)
+
+        # Display the current precise RTK data at the bottom of the image
+        if self.last_rtk_data:
+            rtk_text = f"RTK Data: Lat={self.last_rtk_data[0]:.6f}, Lon={self.last_rtk_data[1]:.6f}, Alt={self.last_rtk_data[2]:.2f}"
+            text_size = cv2.getTextSize(rtk_text, cv2.FONT_HERSHEY_PLAIN, 1, 1)[0]
+            text_x = 10  # Left margin
+            text_y = global_map.shape[0] - 10  # Bottom margin
+            cv2.putText(global_map, rtk_text, (text_x, text_y), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255), 1)
+
         cv2.imshow("Global map", global_map)
         cv2.waitKey(1)
 
-    def step(self, frame_id, frame) -> bool:
+    def step(self, frame_id, frame, rtk_data) -> bool:
         """Perform a single step of the module detection using the frame passed as argument.
 
         If the detection step is successful, the :attr:`self.last_*` parameters are filled with the newly computed elements.
 
         :param frame_id: Integer identifying the id of the frame to be processed.
         :param frame: Numpy array containing the RGB image representing the frame to be processed.
+        :param rtk_data: RTK data associated with the image, if applicable.
         :return: True if the detection was successful, False otherwise.
         """
         self.last_frame_id = frame_id
         self.last_input_frame = frame
+        self.last_rtk_data = rtk_data
         distorted_image = frame
         if self.should_undistort_image:
             undistorted_image = cv2.undistort(src=distorted_image, cameraMatrix=self.camera.camera_matrix,
@@ -164,14 +182,15 @@ class ThermoApp:
         self.cluster_segments()
         self.detect_intersections()
         self.detect_rectangles()
-        # TODO:
-        self.calculate_distance()
+        if self.image_loader:
+            # Calculate the distances between each images only if the image is not a video.
+            self.calculate_distances()
 
         # Motion estimate.
         self.last_mean_motion = self.motion_detector.motion_estimate(self.last_scaled_frame)
 
         # Add the detected rectangles to the global map.
-        self.module_map.insert(self.last_rectangles, frame_id, self.last_mean_motion)
+        self.module_map.insert(self.last_rectangles, frame_id, self.last_mean_motion, self.last_rectangle_positions)
 
         if len(self.last_rectangles) == 0:
             Logger.warning("No rectangles detected!")
@@ -193,7 +212,7 @@ class ThermoApp:
         self.last_cluster_list = None
         self.last_rectangles = None
         self.last_average_dimensions = None
-        self.last_rectangle_distances = None
+        self.last_rectangle_positions = None
         self.last_mean_motion = None
 
         self.last_probabilities = {}
@@ -268,13 +287,12 @@ class ThermoApp:
         self.last_rectangles = rectangle_detector.rectangles
         self.last_average_dimensions = rectangle_detector.get_average_dimensions()
 
-    def calculate_distance(self) -> None:
-        """
-        Calculates the distance between the center of the image and the center of each detected rectangle,
+    def calculate_distances(self) -> None:
+        """Calculates the distance between the center of the image and the center of each detected rectangle,
         expressed as a multiple of the basic rectangle length.
 
-        This function uses the DistanceCalculator class to perform the calculations.
-        """
+        See Also:
+            Module :mod:`~thermography.calculation.distance_calculation` for more details."""
         if not self.last_rectangles or self.last_scaled_frame is None:
             Logger.warning("No rectangles or image data available to calculate distances.")
             return
@@ -282,8 +300,8 @@ class ThermoApp:
         # TODO: Add the precise location as input
         distance_calculator = DistanceCalculator(input_rectangles=self.last_rectangles,
                                                  input_image_shape=self.last_scaled_frame.shape[:2],
-                                                 input_image_rtk=self.image_loader.rtk_data,
-                                                 params=self.rectangle_detection_parameters)
+                                                 input_image_rtk=self.last_rtk_data,
+                                                 params=self.distance_calculation_parameters)
         distance_calculator.calculate_distances()
         self.last_rectangle_positions = distance_calculator.rectangle_positions
 
@@ -330,13 +348,13 @@ class ThermoApp:
         """
         self.video_loader = VideoLoader(video_path=self.input_path, start_frame=start_frame, end_frame=end_frame)
 
-    def load_image(self) -> None:
+    def load_image(self, start_frame: int, end_frame: int) -> None:
         """Loads the image associated with the absolute path given to the constructor.
 
         See Also:
         Module :mod:`~thermography.io.io` for more details.
         """
-        self.image_loader = ImageLoader(image_path=self.input_path)
+        self.image_loader = ImageLoader(image_path=self.input_path, start_frame=start_frame, end_frame=end_frame)
 
     def create_segment_image(self):
         Logger.debug("Creating segment image")
