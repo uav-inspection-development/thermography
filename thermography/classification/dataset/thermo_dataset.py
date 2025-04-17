@@ -4,7 +4,6 @@ from typing import List
 import cv2
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.data import Dataset
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework.ops import convert_to_tensor
 
@@ -184,17 +183,14 @@ class ThermoDataset:
         self.__test_fraction = float(test_fraction) / total
         self.__validation_fraction = float(validation_fraction) / total
 
-    def get_train_iterator(self) -> tf.contrib.data.Iterator:
-        """Builds and returns an initializable iterator for the training dataset."""
-        return self.train.make_initializable_iterator()
+    def get_train_dataset(self) -> tf.data.Dataset:
+        return self.train
 
-    def get_test_iterator(self) -> tf.contrib.data.Iterator:
-        """Builds and returns an initializable iterator for the test dataset."""
-        return self.test.make_initializable_iterator()
+    def get_test_dataset(self) -> tf.data.Dataset:
+        return self.test
 
-    def get_validation_iterator(self) -> tf.contrib.data.Iterator:
-        """Builds and returns an initializable iterator for the validation dataset."""
-        return self.validation.make_initializable_iterator()
+    def get_validation_dataset(self) -> tf.data.Dataset:
+        return self.validation
 
     def print_info(self):
         """Prints the dataset properties."""
@@ -247,21 +243,18 @@ class ThermoDataset:
         """Returns the size of the validation data, i.e. the total number of images available for validation."""
         return int(self.data_size * self.__validation_fraction)
 
+    # TensorFlow 2.x
     @property
-    def train(self) -> tf.contrib.data.Dataset:
-        """Returns a reference to the training data."""
+    def train(self) -> tf.data.Dataset:
         return self.__train_dataset
 
     @property
-    def test(self) -> tf.contrib.data.Dataset:
-        """Returns a reference to the test data."""
+    def test(self) -> tf.data.Dataset:
         return self.__test_dataset
 
     @property
-    def validation(self) -> tf.contrib.data.Dataset:
-        """Returns a reference to the validation data."""
+    def validation(self) -> tf.data.Dataset:
         return self.__validation_dataset
-
     @property
     def split_fraction(self):
         """Returns the fraction used to split the loaded data into train, test and validation data."""
@@ -354,7 +347,7 @@ class ThermoDataset:
         one_hot = tf.one_hot(image_label, self.num_classes, dtype=dtypes.int32)
         img_file = tf.read_file(image_path)
         img_decoded = tf.image.decode_jpeg(img_file, channels=self.image_shape[2])
-        img_decoded = tf.image.resize_images(img_decoded, self.image_shape[0:2])
+        img_decoded = tf.image.resize(img_decoded, self.image_shape[0:2])
         img_decoded = tf.cast(img_decoded, tf.float32)
         if self.normalize_images:
             img_decoded = tf.image.per_image_standardization(img_decoded)
@@ -413,13 +406,13 @@ class ThermoDataset:
                 if not self.rgb:
                     images = images[..., np.newaxis]
                 print("Images shape: {}".format(images.shape))
-                images = convert_to_tensor(images, dtypes.float32)
-                labels = convert_to_tensor(labels, dtypes.int32)
+                images = tf.convert_to_tensor(images, dtypes.float32)
+                labels = tf.convert_to_tensor(labels, dtypes.int32)
             else:
                 images = convert_to_tensor(self.__image_file_names[min_index:max_index], dtypes.string)
                 labels = convert_to_tensor(self.__labels[min_index:max_index], dtypes.int32)
 
-            data = Dataset.from_tensor_slices((images, labels))
+            data = tf.data.Dataset.from_tensor_slices((images, labels))
             if not load_all_data:
                 data = data.map(self.__parse_image)
 

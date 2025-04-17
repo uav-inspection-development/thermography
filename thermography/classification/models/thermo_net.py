@@ -1,46 +1,39 @@
 import numpy as np
 import tensorflow as tf
-
-from thermography.classification.utils.operations import *
-from .base_net import BaseNet
-
+from tensorflow import keras
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, ReLU
+from thermography.classification.models.base_net import BaseNet
 
 class ThermoNet(BaseNet):
-    def __init__(self, x: tf.Tensor, image_shape: np.ndarray, num_classes: int, keep_prob: float, *args, **kwargs):
-        super(self.__class__, self).__init__(x=x, image_shape=image_shape, num_classes=num_classes, name="ThermoNet")
+    def __init__(self, image_shape: np.ndarray, num_classes: int, keep_prob: float):
+        super().__init__(image_shape=image_shape, num_classes=num_classes, name="ThermoNet")
         self.keep_probability = keep_prob
-
-        self.create()
+        self.model = self.create()
 
     def create(self):
-        with tf.variable_scope(self.name):
-            current_shape = self.flat_shape
-            with tf.variable_scope('conv_1'):
-                h_conv1_0 = conv_relu(x=self.x, kernel_shape=[5, 5, self.image_shape[2], 8], bias_shape=[8], name="_0")
-                self.h_pool1 = max_pool_4x4(name="max_pool", x=h_conv1_0)
-                current_shape = self.update_shape(current_shape, 4)
-                # 24 30
+        inputs = Input(shape=self.image_shape)
 
-            with tf.variable_scope('conv_2'):
-                h_conv2_0 = conv_relu(x=self.h_pool1, kernel_shape=[5, 5, 8, 16], bias_shape=[16], name="_0")
-                self.h_pool2 = max_pool_4x4(name="max_pool", x=h_conv2_0)
-                current_shape = self.update_shape(current_shape, 4)
-                # 6 8
+        # Convolutional layer 1
+        x = Conv2D(8, (5, 5), activation='relu', padding='same', name='conv_1_0')(inputs)
+        x = MaxPooling2D((4, 4), name='max_pool_1')(x)
 
-            with tf.variable_scope('full_connected_1'):
-                flattened = tf.reshape(self.h_pool2, [-1, np.prod(current_shape) * 16])
-                shape = flattened.get_shape().as_list()
+        # Convolutional layer 2
+        x = Conv2D(16, (5, 5), activation='relu', padding='same', name='conv_2_0')(x)
+        x = MaxPooling2D((4, 4), name='max_pool_2')(x)
 
-                W_fc1 = weight_variable(name="W", shape=[shape[1], 256])
-                b_fc1 = bias_variable(name="b", shape=[256])
+        # Flatten
+        x = Flatten(name='flattened')(x)
 
-                h_fc1 = tf.nn.relu(tf.matmul(flattened, W_fc1) + b_fc1)
+        # Fully connected layer 1
+        x = Dense(256, activation='relu', name='fc_1')(x)
 
-                with tf.variable_scope('drop_out_1'):
-                    self.h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob=self.keep_probability, name="dropout")
+        # Dropout
+        x = Dropout(1 - self.keep_probability, name='dropout_1')(x)
 
-            with tf.variable_scope('full_connected_2'):
-                W_fc2 = weight_variable(name="W", shape=[256, self.num_classes])
-                b_fc2 = bias_variable(name="b", shape=[self.num_classes])
+        # Fully connected layer 2
+        outputs = Dense(self.num_classes, activation='softmax', name='logits')(x)
 
-                self.logits = tf.add(tf.matmul(self.h_fc1_drop, W_fc2), b_fc2, name="logits")
+        model = Model(inputs=inputs, outputs=outputs, name=self.name)
+        return model
+

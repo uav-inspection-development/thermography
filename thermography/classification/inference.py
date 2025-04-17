@@ -36,30 +36,23 @@ class Inference:
         self.image_shape = image_shape
         self.num_classes = num_classes
 
+
         self.graph = tf.Graph()
         with self.graph.as_default():
-            self.x = tf.placeholder(tf.float32, [None, *self.image_shape], name="input_image")
-            self.keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-            self.model = model_class(x=self.x, image_shape=self.image_shape, num_classes=self.num_classes,
-                                     keep_prob=self.keep_probability)
+            self.keep_probability = 1.0
+            self.model = model_class(image_shape=self.image_shape, num_classes=self.num_classes,keep_prob=self.keep_probability)
+            self.model.build(input_shape=(None, *self.image_shape))
 
-        self.logits = self.model.logits
-        self.probabilities = tf.nn.softmax(self.logits)
+        # self.logits = self.model.call()
 
-        # Add ops to save and restore all the variables.
-        self.sess = tf.Session(graph=self.graph)
+
 
         # Restore variables from disk.
-        with self.sess.as_default():
-            with self.graph.as_default():
-                self.saver = tf.train.Saver()
-                self.saver.restore(self.sess, os.path.join(self.checkpoint_dir, self.model.name))
+        with self.graph.as_default():
+            self.model.load_weights(os.path.join(self.checkpoint_dir, f"{self.model.name}.weights.h5"))
 
         Logger.info("Model restored.")
 
-    def __del__(self):
-        Logger.info("Deleting inference object")
-        self.sess.close()
 
     @property
     def model(self):
@@ -111,6 +104,5 @@ class Inference:
         Logger.debug("Classifying {} module image{}".format(
             img_tensor.shape[0], "" if img_tensor.shape[0] == 1 else "s"))
 
-        class_probabilities = self.sess.run(self.probabilities,
-                                            feed_dict={self.x: img_tensor, self.keep_probability: 1.0})
+        class_probabilities = self.model.predict(img_tensor)
         return class_probabilities

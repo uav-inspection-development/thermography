@@ -1,29 +1,20 @@
 from abc import ABC, abstractmethod
-
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.models import Model
 
-
-class BaseNet(ABC):
+class BaseNet(ABC, Model):
     """Base interface for nets used by the :mod:`thermography` package. This class offers a convenience interface to train a classifier and to access its data."""
 
-    def __init__(self, x: tf.Tensor, image_shape: np.ndarray, num_classes: int, name: str = "ThermoNet"):
-        self.x = x
+    def __init__(self, image_shape: np.ndarray, num_classes: int, name: str = "ThermoNet"):
+        super().__init__(name=name)
         self.image_shape = image_shape
         self.__num_classes = num_classes
-        self.__name = name
         self.__logits = None
+        self.model = None
 
-    @property
-    def x(self) -> tf.Tensor:
-        """Returns a reference to the input placeholder."""
-        return self.__x
-
-    @x.setter
-    def x(self, x_: tf.Tensor):
-        if type(x_) is not tf.Tensor:
-            raise TypeError("__x in {} must be a tensorflow placeholder!".format(self.__class__.__name__))
-        self.__x = x_
+    def build(self, input_shape):
+        pass
 
     @property
     def image_shape(self) -> np.ndarray:
@@ -31,35 +22,35 @@ class BaseNet(ABC):
         return self.__image_shape
 
     @image_shape.setter
-    def image_shape(self, shape):
-        if type(shape) is not np.ndarray:
+    def image_shape(self, shape:np.ndarray):
+        if not isinstance(shape, np.ndarray):
             raise TypeError(
-                "__image_shape in {} must be a  np.ndarray of three elements".format(self.__class__.__name__))
+                "__image_shape in {} must be a np.ndarray of three elements".format(self.__class__.__name__))
         if len(shape) != 3:
             raise ValueError(
-                "__image_shape in {} must be a  np.ndarray of there elements".format(self.__class__.__name__))
+                "__image_shape in {} must be a np.ndarray of three elements".format(self.__class__.__name__))
         self.__image_shape = shape
 
     @property
-    def channels(self)->int:
+    def channels(self) -> int:
         """Returns the number of channels accepted by the model."""
         return self.image_shape[2]
 
-    @property
-    def name(self)->str:
-        """Returns the name associated to the model."""
-        return self.__name
+    # @property
+    # def name(self) -> str:
+    #     """Returns the name associated to the model."""
+    #     return self.__name
 
     @property
-    def num_classes(self) ->int:
+    def num_classes(self) -> int:
         """Returns the number of classes which the model will consider for classification."""
         if self.__num_classes is None:
-            raise RuntimeError("__num_classes in {} is has not been overridden!".format(self.__class__.__name__))
+            raise RuntimeError("__num_classes in {} has not been overridden!".format(self.__class__.__name__))
         return self.__num_classes
 
     @num_classes.setter
     def num_classes(self, n: int):
-        if type(n) is not int:
+        if not isinstance(n, int):
             raise TypeError("Num classes in {} must be an integer!".format(self.__class__.__name__))
         if n <= 0:
             raise ValueError("Num classes in {} must be strictly positive!".format(self.__class__.__name__))
@@ -69,7 +60,7 @@ class BaseNet(ABC):
     def logits(self) -> tf.Tensor:
         """Returns a tf.Tensor representing the logits of the classified input images."""
         if self.__logits is None:
-            raise RuntimeError("__logits in {} is has not been overridden!".format(self.__class__.__name__))
+            raise RuntimeError("__logits in {} has not been overridden!".format(self.__class__.__name__))
         return self.__logits
 
     @logits.setter
@@ -77,11 +68,16 @@ class BaseNet(ABC):
         self.__logits = l
 
     @abstractmethod
-    def create(self) -> None:
-        """Method which each subclass must implement which creates the computational graph.
+    def call(self, inputs, training=False):
+        """定义前向传播逻辑（子类必须实现）"""
+        raise NotImplementedError("Subclasses must implement call()!")
 
-        .. note:: This method must use the input placeholder :attr:`self.x` and terminate into the logits tensor :attr:`self.logits`."""
-        pass
+    # @abstractmethod
+    # def create(self) -> None:
+    #     """Method which each subclass must implement which creates the computational graph.
+    #
+    #     .. note:: This method must use the input placeholder :attr:`self.x` and terminate into the logits tensor :attr:`self.logits`."""
+    #     pass
 
     @staticmethod
     def update_shape(current_shape: np.ndarray, scale: int) -> np.ndarray:

@@ -49,6 +49,7 @@ def main():
     global_step = tf.Variable(0, name="global_step")
     learning_rate = 0.00025
 
+
     # Network params
     image_shape = np.array([96, 120, 1])
     keep_probability = 0.5
@@ -76,17 +77,17 @@ def main():
                 dataset.print_info()
 
             with tf.name_scope("iterator"):
-                train_iterator = dataset.get_train_iterator()
-                next_train_batch = train_iterator.get_next()
-                test_iterator = dataset.get_test_iterator()
-                next_test_batch = test_iterator.get_next()
+                train_dataset = dataset.get_train_dataset()
+                test_dataset = dataset.get_test_dataset()
+                train_size = dataset.train_size
+                train_steps_per_epoch = int(np.ceil(train_size / batch_size))
 
     ############################### Net construction #############################
 
     with tf.name_scope("placeholders"):
         # TF placeholder for graph input and output
-        input_images = tf.placeholder(tf.float32, [None, *image_shape], name="input_image")
-        input_one_hot_labels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_one_hot_labels")
+        input_images = tf.keras.Input(shape=image_shape, dtype=tf.float32, name="input_image")
+        input_one_hot_labels = tf.keras.Input(shape=(dataset.num_classes,), dtype=tf.int32, name="input_one_hot_labels")
         input_labels = tf.argmax(input_one_hot_labels, axis=1, name="input_labels")
         keep_prob = tf.placeholder(tf.float32, name="keep_probability")
 
@@ -97,16 +98,17 @@ def main():
     with tf.name_scope("cross_ent"):
         # Link variable to model output
         logits = model.logits
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=input_one_hot_labels))
+        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
 
     # Add the loss to summary
-    tf.summary.scalar('train/cross_entropy', loss, collections=["train"])
-    tf.summary.scalar('test/cross_entropy', loss, collections=["test"])
+    with tf.summary.create_file_writer(summary_path).as_default():
+        tf.summary.scalar('train/cross_entropy', loss, step=global_step)
+    with tf.summary.create_file_writer(summary_path).as_default():
+        tf.summary.scalar('test/cross_entropy', loss, step=global_step)
 
     # Train operation
     with tf.name_scope("train"):
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name="adam")
-        train_op = optimizer.minimize(loss, global_step=global_step)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, name="adam")
 
     # Predict operation
     with tf.name_scope("prediction"):
@@ -115,163 +117,145 @@ def main():
         accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32), name="accuracy")
 
     # Add the accuracy to the summary
-    tf.summary.scalar('train/accuracy', accuracy, collections=["train"])
-    tf.summary.scalar('test/accuracy', accuracy, collections=["test"])
+    with tf.summary.create_file_writer(summary_path).as_default():
+        tf.summary.scalar('train/accuracy', accuracy, step=global_step)
+    with tf.summary.create_file_writer(summary_path).as_default():
+        tf.summary.scalar('test/accuracy', accuracy, step=global_step)
+
 
     # Merge all summaries together
-    train_summaries = tf.summary.merge_all(key="train")
-    test_summaries = tf.summary.merge_all(key="test")
-    histogram_summaries = tf.summary.merge_all(key="histograms")
-    kernel_summaries = tf.summary.merge_all(key="kernels")
+    train_summaries = tf.summary.create_file_writer(summary_path + "train")
+    test_summaries = tf.summary.create_file_writer(summary_path + "test")
+    histogram_summaries = tf.summary.create_file_writer(summary_path + "histograms")
+    kernel_summaries = tf.summary.create_file_writer(summary_path + "kernels")
 
     # Initialize the FileWriter
-    writer = tf.summary.FileWriter(summary_path)
+    writer = tf.summary.create_file_writer(summary_path)
 
-    # Initialize an saver for store model checkpoints
-    saver = tf.train.Saver()
+    # Initialize a saver for store model checkpoints
+    checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model, global_step=global_step)
+    checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_path, max_to_keep=3)
+
+    # 初始化全局步数
+    global_step = tf.Variable(0, dtype=tf.int64, trainable=False)
 
     # Start Tensorflow session
-    with tf.Session() as sess:
+    for epoch in range(num_epochs):
+        print("=" * 60)
+        print(f"{datetime.now()} Starting epoch {epoch}")
 
-        # Initialize all variables
-        sess.run(tf.global_variables_initializer())
+        # 训练阶段 ---------------------------------------------------------
+        train_preds = []
+        train_labels = []
+        wrong_samples = []
 
-        # Add the model graph to TensorBoard only if we did not load the entire dataset!
-        if not load_all_data:
-            writer.add_graph(sess.graph)
+        for step, (img_batch, label_batch) in enumerate(dataset.train_dataset):
+            start_time = timeit.default_timer()
 
-        print("{} Start training...".format(datetime.now()))
-        print("{} Open Tensorboard at --logdir={}".format(datetime.now(), summary_path))
+            # 前向传播 + 计算梯度
+            with tf.GradientTape() as tape:
+                logits = model(img_batch, training=True)  # 自动处理 dropout
+                loss = loss(label_batch, logits)
+                predictions = tf.argmax(logits, axis=1)
 
-        train_steps_per_epoch = int(np.ceil(dataset.train_size / dataset.batch_size))
-        print("{} Number of training steps per epoch: {}".format(datetime.now(), train_steps_per_epoch))
-        test_steps_per_epoch = int(np.ceil(dataset.test_size / dataset.batch_size))
-        print("{} Number of test steps per epoch: {}".format(datetime.now(), test_steps_per_epoch))
-        print()
+            # 记录训练预测
+            train_preds.extend(predictions.numpy())
+            train_labels.extend(tf.argmax(label_batch, axis=1).numpy())
 
-        # Loop over number of epochs
-        for epoch in range(num_epochs):
+            # 反向传播
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-            print("=======================================================")
-            print("{} Starting epoch number: {}".format(datetime.now(), epoch))
+            # 更新全局步数
+            global_step.assign_add(1)
+            current_step = global_step.numpy()
 
-            # Initialize iterator with the training and test dataset.
-            sess.run(train_iterator.initializer)
-            sess.run(test_iterator.initializer)
+            # 记录训练摘要
+            if current_step % write_train_summaries_every_n_steps == 0:
+                with writer.as_default():
+                    tf.summary.scalar("train_loss", loss, step=current_step)
+                    # 添加其他指标...
 
-            all_train_predictions = []
-            all_train_labels = []
-            train_epoch_step = 0
-            while True:
-                step_start_time = timeit.default_timer()
+            # 记录直方图
+            if current_step % write_histograms_every_n_steps == 0:
+                with writer.as_default():
+                    for layer in model.layers:
+                        for weight in layer.weights:
+                            tf.summary.histogram(f"{layer.name}/{weight.name}", weight, step=current_step)
 
-                # get next batch of data
-                try:
-                    img_batch, label_batch = sess.run(next_train_batch)
-                except tf.errors.OutOfRangeError:
-                    print("{} Ended training epoch number {}".format(datetime.now(), epoch))
-                    break
+            # 记录卷积核可视化
+            if current_step % write_kernel_images_every_n_steps == 0:
+                with writer.as_default():
+                    for layer in model.layers:
+                        if isinstance(layer, tf.keras.layers.Conv2D):
+                            kernels = layer.weights[0]
+                            # 调整维度格式 [kH, kW, inC, outC] -> [outC, kH, kW, inC]
+                            kernels_transposed = tf.transpose(kernels, [3, 0, 1, 2])
+                            tf.summary.image(f"{layer.name}/kernels", kernels_transposed[..., :4],
+                                             step=current_step, max_outputs=8)
 
-                # And run the training op
-                _, predictions = sess.run([train_op, class_prediction_op], feed_dict={input_images: img_batch,
-                                                                                      input_one_hot_labels: label_batch,
-                                                                                      keep_prob: keep_probability})
-                all_train_predictions.extend(predictions)
-                all_train_labels.extend(np.argmax(label_batch, axis=1))
+            # 打印进度
+            duration = timeit.default_timer() - start_time
+            print(f"{datetime.now()} Step {current_step} | Epoch {epoch} ({step + 1}/{train_steps_per_epoch}) | "
+                  f"Duration: {duration:.3f}s | Loss: {loss.numpy():.4f}")
 
-                if sess.run(global_step) % write_train_summaries_every_n_steps == 0:
-                    print("{} Writing training summary".format(datetime.now()))
-                    train_s = sess.run(train_summaries,
-                                       feed_dict={input_images: img_batch, input_one_hot_labels: label_batch,
-                                                  keep_prob: keep_probability})
-                    writer.add_summary(train_s, sess.run(global_step))
+        # 训练集混淆矩阵
+        train_cm = tf.math.confusion_matrix(train_labels, train_preds, dataset.num_classes)
+        print(f"\nTraining Confusion Matrix (Epoch {epoch}):\n{train_cm.numpy()}")
 
-                if sess.run(global_step) % write_histograms_every_n_steps == 0:
-                    print("{} Writing histogram summary".format(datetime.now()))
-                    histogram_s = sess.run(histogram_summaries)
-                    writer.add_summary(histogram_s, sess.run(global_step))
+        # 测试阶段 ---------------------------------------------------------
+        test_preds = []
+        test_labels = []
+        test_loss = tf.keras.metrics.Mean()
+        wrong_samples = []
 
-                if sess.run(global_step) % write_kernel_images_every_n_steps == 0:
-                    print("{} Writing kernel summary".format(datetime.now()))
-                    kernel_s = sess.run(kernel_summaries)
-                    writer.add_summary(kernel_s, sess.run(global_step))
+        for step, (img_batch, label_batch) in enumerate(dataset.test_dataset):
+            # 前向传播
+            logits = model(img_batch, training=False)  # 关闭 dropout
+            loss = loss(label_batch, logits)
+            test_loss.update_state(loss)
 
-                step_end_time = timeit.default_timer()
+            predictions = tf.argmax(logits, axis=1)
+            test_preds.extend(predictions.numpy())
+            test_labels.extend(tf.argmax(label_batch, axis=1).numpy())
 
-                train_epoch_step += 1
-                print("{} Global step {}, Epoch: {}, Epoch step {}/{}, ETA: {:.3g} s."
-                      .format(datetime.now(), sess.run(global_step), epoch, train_epoch_step, train_steps_per_epoch,
-                              step_end_time - step_start_time))
+            # 记录错误样本
+            correct = tf.equal(predictions, tf.argmax(label_batch, axis=1))
+            wrong_indices = tf.where(~correct)
+            for idx in wrong_indices:
+                idx = idx.numpy()[0]
+                wrong_samples.append({
+                    "image": img_batch[idx],
+                    "pred": predictions[idx].numpy(),
+                    "true": tf.argmax(label_batch[idx]).numpy()
+                })
 
-            cm = tf.confusion_matrix(labels=all_train_labels, predictions=all_train_predictions,
-                                     num_classes=dataset.num_classes).eval()
-            print("{} Training confusion matrix:\n{}".format(datetime.now(), cm))
+        # 记录测试摘要
+        if epoch % write_test_summaries_every_n_epochs == 0:
+            with writer.as_default():
+                tf.summary.scalar("test_loss", test_loss.result(), step=current_step)
+                # 添加其他测试指标...
 
-            print("-------------------------------------------------------")
-            print("{} Starting evaluation on test set.".format(datetime.now()))
-            # Evaluate on test dataset
-            all_test_predictions = []
-            all_test_labels = []
-            test_summaries_written = False
-            test_epoch_steps = 0
-            wrongly_classified = []
-            while True:
-                step_start_time = timeit.default_timer()
-                try:
-                    img_batch, label_batch = sess.run(next_test_batch)
-                except tf.errors.OutOfRangeError:
-                    print("{} Test evaluation terminated.".format(datetime.now()))
-                    break
+            # 记录错误分类图像（最多10个）
+            if len(wrong_samples) > 0:
+                with writer.as_default():
+                    for i, sample in enumerate(wrong_samples[:10]):
+                        img = tf.expand_dims(sample["image"], 0)  # 添加batch维度
+                        tf.summary.image(
+                            f"wrong_predictions/{i}_true{sample['true']}_pred{sample['pred']}",
+                            img,
+                            step=current_step
+                        )
 
-                predictions, predicted_correctly = sess.run([class_prediction_op, correct_pred],
-                                                            feed_dict={input_images: img_batch,
-                                                                       input_one_hot_labels: label_batch,
-                                                                       keep_prob: 1.0})
-                all_test_predictions.extend(predictions)
-                all_test_labels.extend(np.argmax(label_batch, axis=1))
+        # 测试集混淆矩阵
+        test_cm = tf.math.confusion_matrix(test_labels, test_preds, dataset.num_classes)
+        print(f"\nTest Confusion Matrix (Epoch {epoch}):\n{test_cm.numpy()}")
 
-                for img, p, l in zip(img_batch[~predicted_correctly], predictions[~predicted_correctly],
-                                     np.argmax(label_batch[~predicted_correctly, :], axis=1)):
-                    wrongly_classified.append({"img": img, "prediction": p, "label": l})
+        # 保存模型
+        if epoch % save_model_every_n_epochs == 0:
+            save_path = checkpoint_manager.save(checkpoint_number=global_step)
+            print(f"{datetime.now()} Saved checkpoint at {save_path}")
 
-                step_end_time = timeit.default_timer()
-                test_epoch_steps += 1
-                print("{} Epoch: {}, Test epoch step {}/{}, ETA: {:.3g} s."
-                      .format(datetime.now(), epoch, test_epoch_steps, test_steps_per_epoch,
-                              step_end_time - step_start_time))
-
-                if not test_summaries_written and epoch % write_test_summaries_every_n_epochs == 0:
-                    print("{} Writing test summary".format(datetime.now()))
-                    test_summaries_written = True
-                    test_s = sess.run(test_summaries,
-                                      feed_dict={input_images: img_batch, input_one_hot_labels: label_batch,
-                                                 keep_prob: 1.0})
-                    writer.add_summary(test_s, sess.run(global_step))
-
-            cm = tf.confusion_matrix(labels=all_test_labels, predictions=all_test_predictions,
-                                     num_classes=dataset.num_classes).eval()
-            print("{} Test confusion matrix:\n{}".format(datetime.now(), cm))
-
-            if epoch % write_test_summaries_every_n_epochs == 0:
-                with tf.name_scope('image_prediction'):
-                    if len(wrongly_classified) > 10:
-                        wrongly_classified = wrongly_classified[0:10]
-                    for i, wrong in enumerate(wrongly_classified):
-                        image_summary = tf.summary.image(
-                            "{}: True {} pred {}".format(i, wrong["label"], wrong["prediction"]),
-                            np.array([wrong["img"]]))
-                        image_s = sess.run(image_summary)
-                        writer.add_summary(image_s, sess.run(global_step))
-
-            if epoch % save_model_every_n_epochs == 0:
-                print("{} Saving checkpoint of model".format(datetime.now()))
-
-                # save checkpoint of the model
-                checkpoint_name = os.path.join(checkpoint_path, model.name)
-                save_path = saver.save(sess, checkpoint_name, global_step=epoch, write_meta_graph=False)
-
-                print("{} Model checkpoint saved at {}".format(datetime.now(), save_path))
-
-
+        print(f"{datetime.now()} Finished epoch {epoch}\n")
 if __name__ == '__main__':
     main()

@@ -13,13 +13,6 @@ def test_edge_detector():
         print("Error: Unable to load image. Please check the file path.")
         return
 
-    # 创建 EdgeDetectorParams 对象，可以自定义参数
-    # params = EdgeDetectorParams(
-    #     hysteresis_min_thresh=50,  # Canny低阈值
-    #     hysteresis_max_thresh=150,  # Canny高阈值
-    #     kernel=cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),  # 膨胀/腐蚀的结构元素
-    #     dilation_steps=3  # 膨胀步骤
-    # )
     params = EdgeDetectorParams()
 
     # 创建 EdgeDetector 对象

@@ -222,7 +222,7 @@ class ModuleMap:
         """
         rectangle_area = area(rectangle)
         rectangle_center = np.mean(rectangle, axis=0)
-        min_surface_between_rect = np.infty
+        min_surface_between_rect = np.inf
         best_id = None
         for module_id, module_in_map in self.global_module_map.items():
             if not rectangle_contains(module_in_map.last_rectangle, rectangle_center):

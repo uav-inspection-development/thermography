@@ -117,7 +117,7 @@ class SegmentClusterer:
         elif self.params.cluster_type is "gmm":
             Logger.debug("Clustering segments using GMM")
             best_gmm = None
-            lowest_bic = np.infty
+            lowest_bic = np.inf
             bic = []
             n_components_range = range(1, self.params.num_clusters + 1)
             if not self.params.swipe_clusters:
