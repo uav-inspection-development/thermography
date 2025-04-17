@@ -43,10 +43,6 @@ class Inference:
             self.model = model_class(image_shape=self.image_shape, num_classes=self.num_classes,keep_prob=self.keep_probability)
             self.model.build(input_shape=(None, *self.image_shape))
 
-        # self.logits = self.model.call()
-
-
-
         # Restore variables from disk.
         with self.graph.as_default():
             self.model.load_weights(os.path.join(self.checkpoint_dir, f"{self.model.name}.weights.h5"))
