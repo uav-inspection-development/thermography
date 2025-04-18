@@ -32,7 +32,7 @@ else:
 
 # Display test results
 cv2.imshow("Filtered segments", app.create_segment_image())
-cv2.imshow("Detected rectangles", app.create_rectangle_image())
+# cv2.imshow("Detected rectangles", app.create_rectangle_image())
 cv2.imshow("Global map", app.create_module_map_image())
 cv2.waitKey(0)
 cv2.destroyAllWindows()
