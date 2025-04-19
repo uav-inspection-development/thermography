@@ -137,6 +137,8 @@ class ThermoGuiThread(QThread):
                 self.app.step(frame_id, frame)
                 # Perform inference (classification on the detected modules)
                 self.app.classify_detected_modules()
+                # Perform crack detection on the detected modules
+                self.app.detect_modules_cracks()
 
                 self.last_frame_signal.emit(self.app.last_scaled_frame_rgb)
                 self.attention_frame_signal.emit(self.app.last_attention_image)

@@ -23,8 +23,8 @@ class EdgeDetectorParams:
 
 
 class EdgeDetector:
-    """Class responsible for detecting edges in greyscale images.
-    The approach taken to detect edges in the input greyscale image is the following:
+    """Class responsible for detecting edges in grayscale images.
+    The approach taken to detect edges in the input grayscale image is the following:
 
         1. Perform a canny edge detection on the input image.
         2. Dilate the resulting binary image for a parametrized number of steps in order to connect short edges and smooth out the edge shape.
@@ -33,7 +33,7 @@ class EdgeDetector:
     """
     def __init__(self, input_image: np.ndarray, params: EdgeDetectorParams = EdgeDetectorParams()):
         """
-        :param input_image: Input greyscale image where edges must be detected.
+        :param input_image: Input grayscale image where edges must be detected.
         :param params: Parameters used for edge detection.
         """
         self.input_image = input_image

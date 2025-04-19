@@ -28,7 +28,6 @@ class DistanceCalculator:
         :param input_image_shape: A tuple `(height, width)` representing the dimensions of the image.
         :param params: Distance calculator parameters to be used for distance calculation.
         """
-        # TODO:
         self.rectangles = input_rectangles
         self.image_shape = input_image_shape
         self.image_rtk = input_image_rtk

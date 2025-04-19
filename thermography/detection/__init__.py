@@ -7,6 +7,7 @@ from .rectangle_detection import *
 from .preprocessing import *
 from .segment_clustering import *
 from .segment_detection import *
+from .crack_detection import *
 
 __all__ = ["EdgeDetector", "EdgeDetectorParams",
            "IntersectionDetector", "IntersectionDetectorParams",
@@ -14,4 +15,5 @@ __all__ = ["EdgeDetector", "EdgeDetectorParams",
            "RectangleDetector", "RectangleDetectorParams",
            "PreprocessingParams", "FramePreprocessor",
            "SegmentClusterer", "SegmentClustererParams", "ClusterCleaningParams",
-           "SegmentDetector", "SegmentDetectorParams"]
+           "SegmentDetector", "SegmentDetectorParams",
+           "CrackDetector", "CrackDetectorParams"]

@@ -74,6 +74,7 @@ class ThermoApp:
         self.last_frame_id = 0
         self.last_rtk_data = None
         self.last_probabilities = {}
+        self.module_crack_features = {}
 
         # Runtime parameters for detection.
         self.should_undistort_image = True
@@ -85,6 +86,7 @@ class ThermoApp:
         self.intersection_detection_parameters = IntersectionDetectorParams()
         self.rectangle_detection_parameters = RectangleDetectorParams()
         self.distance_calculation_parameters = DistanceCalculatorParams()
+        self.crack_detection_parameters = CrackDetectorParams()
 
         # Load the camera and module parameters.
         self.__load_params()
@@ -216,6 +218,7 @@ class ThermoApp:
         self.last_mean_motion = None
 
         self.last_probabilities = {}
+        self.module_crack_features = {}
 
     def preprocess_frame(self) -> None:
         """Preprocesses the frame stored at :attr:`self.last_input_frame` by scaling, rotating and computing the attention regions.
@@ -304,6 +307,33 @@ class ThermoApp:
                                                  params=self.distance_calculation_parameters)
         distance_calculator.calculate_distances()
         self.last_rectangle_positions = distance_calculator.rectangle_positions
+
+    def detect_modules_cracks(self) -> None:
+        """Detects cracks in the images of the modules from the module list.
+
+        This function processes all modules detected in the current frame which have been registered in the
+        :attr:`self.module_map` module map. The modules are analyzed by the :class:`CrackDetector` object, which
+        extracts features such as inactive area proportion, crack length, and brightness for each module.
+
+        .. note:: This function must be called after creating the module list using :meth:`create_module_list`.
+
+        See Also:
+            Module :mod:`~thermography.detection.crack_detection` for more details.
+        """
+        # Create the module list
+        module_list = self.create_module_list()
+
+        # Iterate over each module in the list
+        for module in module_list:
+            module_id = module["id"]
+            module_image = module["image"]
+
+            # Initialize the CrackDetector with the module image
+            crack_detector = CrackDetector(input_image=module_image, params=self.crack_detection_parameters)
+            features = crack_detector.extract_features()
+            Logger.info(f"Module {module_id}: Extracted features: {features}")
+
+            self.module_crack_features[module_id] = features
 
     def classify_detected_modules(self) -> None:
         """Classifies the modules in the global module map which have been detected in the current frame.
